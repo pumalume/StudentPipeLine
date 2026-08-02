@@ -1,0 +1,36 @@
+SchoolPipeProject/
+├── .env.example                      # Template for DB passwords & API keys (NO real secrets)
+├── .gitignore                        # Tells Git which files/folders to ignore
+├── README.md                         # Architecture diagram and documentation
+├── requirements.txt                  # Python package dependencies
+│
+├── config/                           # Configuration settings
+│   ├── __init__.py
+│   └── settings.py                   # Environment variable loader
+│
+├── data/                             # Local staging folder (ignored by Git)
+│   ├── input/                        # Incoming Excel/flat files
+│   └── logs/                         # Execution logs
+│
+├── src/                              # Main ETL Python code package
+│   ├── __init__.py
+│   ├── main.py                       # Main script to run the whole pipeline
+│   │
+│   ├── extractors/                   # Data Ingestion
+│   │   ├── __init__.py
+│   │   ├── wordpress_extractor.py    # Pulls from MySQL (wp_users/usermeta)
+│   │   ├── gdrive_extractor.py       # Pulls from Google Drive API
+│   │   └── excel_extractor.py        # Reads local Excel files
+│   │
+│   ├── transformers/                 # Data Cleaning & Normalization
+│   │   ├── __init__.py
+│   │   ├── metadata_pivoter.py      # Pivots wp_usermeta key-values to flat columns
+│   │   └── schema_sanitizer.py      # Cleans types, dates, and nulls with Pandas
+│   │
+│   └── loaders/                      # Database Loading
+│       ├── __init__.py
+│       └── postgres_loader.py       # Writes clean data into PostgreSQL
+│
+└── tests/                            # Unit tests for extractors & transformers
+    ├── test_extractors.py
+    └── test_transformers.py
