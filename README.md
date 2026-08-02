@@ -65,3 +65,44 @@ flowchart TD
     style SOURCE fill:#ffffff,stroke:#90caf9,stroke-width:2px,stroke-dasharray: 5 5;
     style ENGINE fill:#ffffff,stroke:#ffcc80,stroke-width:2px,stroke-dasharray: 5 5;
     style TARGET fill:#ffffff,stroke:#a5d6a7,stroke-width:2px,stroke-dasharray: 5 5;
+
+
+## Repository Layout
+
+```text
+SchoolPipeProject/
+├── .env.example                      # Template for DB passwords & API keys (NO real secrets)
+├── .gitignore                        # Prevents logs, secrets, and cache from committing
+├── README.md                         # Architecture overview and documentation
+├── requirements.txt                  # Python dependencies (pandas, sqlalchemy, etc.)
+│
+├── config/                           # Environment & application settings
+│   ├── __init__.py
+│   └── settings.py                   # Environment variable loader
+│
+├── data/                             # Local staging folder (ignored by Git)
+│   ├── input/                        # Incoming Excel / flat files
+│   └── logs/                         # Pipeline execution logs
+│
+├── src/                              # ETL pipeline source code
+│   ├── __init__.py
+│   ├── main.py                       # Main pipeline orchestration entry point
+│   │
+│   ├── extractors/                   # Data ingestion modules
+│   │   ├── __init__.py
+│   │   ├── wordpress_extractor.py    # MySQL connector (wp_users & wp_usermeta)
+│   │   ├── gdrive_extractor.py       # Google Drive API connector
+│   │   └── excel_extractor.py        # Local Excel file parser
+│   │
+│   ├── transformers/                 # Data transformation & normalization
+│   │   ├── __init__.py
+│   │   ├── metadata_pivoter.py      # Pivots wp_usermeta key-values into relational rows
+│   │   └── schema_sanitizer.py      # Pandas vectorization, null checks, date parsing
+│   │
+│   └── loaders/                      # Data persistence
+│       ├── __init__.py
+│       └── postgres_loader.py       # SQLAlchemy connection pool & PostgreSQL batch load
+│
+└── tests/                            # Automated test suite
+    ├── test_extractors.py
+    └── test_transformers.py
