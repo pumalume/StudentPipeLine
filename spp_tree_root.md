@@ -4,7 +4,7 @@ This document provides a visual breakdown of the repository's file tree and modu
 
 ---
 
-## 1. Visual Module Map (Flowchart Layout)
+## 1. Pipeline Flow Architecture (Horizontal)
 
 ```mermaid
 flowchart LR
