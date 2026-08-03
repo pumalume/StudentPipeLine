@@ -1,16 +1,18 @@
-"""Extracts raw student profile data from the WordPress MySQL/MariaDB source.
+"""Extracts raw student profile data from the WordPress MySQL/MariaDB source into the Data Lake.
 
 Usage:
     from src.extractors.wordpress_extractor import WordPressExtractor
 
     extractor = WordPressExtractor()
     if extractor.test_connection():
-        df = extractor.fetch_raw_users()
+        paths = extractor.extract_to_lake()
 """
 from __future__ import annotations
 
 import logging
 import time
+from datetime import date
+from pathlib import Path
 
 import pandas as pd
 from sqlalchemy import create_engine, text
@@ -20,9 +22,11 @@ from config.settings import configure_logging, get_settings
 
 logger = logging.getLogger(__name__)
 
+LAKE_RAW_DIR = Path("data/raw")
+
 
 class WordPressExtractor:
-    """Reads student profile rows out of `wp_users` / `wp_usermeta`."""
+    """Reads student records out of the custom `ehStudents` table."""
 
     def __init__(self) -> None:
         self.settings = get_settings()
@@ -54,29 +58,43 @@ class WordPressExtractor:
         return True
 
     def fetch_raw_users(self) -> pd.DataFrame:
-        """Pull `wp_users` joined with `wp_usermeta` as a raw, un-pivoted DataFrame.
-
-        Each row is one (user, meta_key, meta_value) combination — pivoting
-        into flat columns happens later in `metadata_pivoter.py`.
-        """
+        """Pull raw student records from the custom `ehStudents` table."""
         query = text(
             """
-            SELECT
-                u.ID AS user_id,
-                u.user_login,
-                u.user_email,
-                u.user_registered,
-                um.meta_key,
-                um.meta_value
-            FROM wp_users AS u
-            LEFT JOIN wp_usermeta AS um ON um.user_id = u.ID
+            SELECT *
+            FROM ehStudents
             """
         )
         with self.engine.connect() as conn:
             df = pd.read_sql(query, conn)
 
-        logger.info("Fetched %d raw wp_users/wp_usermeta rows", len(df))
+        logger.info("Fetched %d raw rows from ehStudents", len(df))
         return df
+
+    def extract_to_lake(self) -> dict[str, Path]:
+        """Dump `ehStudents`, completely untouched, into the local data lake.
+
+        Writes Parquet snapshots to `data/raw/wordpress/<YYYY-MM-DD>/eh_students.parquet`.
+        """
+        snapshot_dir = LAKE_RAW_DIR / "wordpress" / date.today().isoformat()
+        snapshot_dir.mkdir(parents=True, exist_ok=True)
+
+        tables = {
+            "ehStudents": "eh_students.parquet",
+        }
+
+        saved_paths: dict[str, Path] = {}
+        with self.engine.connect() as conn:
+            for table_name, filename in tables.items():
+                df = pd.read_sql(text(f"SELECT * FROM {table_name}"), conn)
+                out_path = snapshot_dir / filename
+                df.to_parquet(out_path, index=False)
+                saved_paths[table_name] = out_path
+                logger.info(
+                    "Saved raw %s snapshot -> %s (%d rows)", table_name, out_path, len(df)
+                )
+
+        return saved_paths
 
 
 if __name__ == "__main__":
@@ -88,14 +106,7 @@ if __name__ == "__main__":
     print(f"Connection status: {'OK' if ok else 'FAILED'}")
 
     if ok:
-        print("\nFetching raw wp_users / wp_usermeta rows...")
-        raw_df = extractor.fetch_raw_users()
-
-        pd.set_option("display.max_rows", 20)
-        pd.set_option("display.max_colwidth", 40)
-
-        print(f"\nTotal rows fetched: {len(raw_df)}")
-
-        top_meta_keys = raw_df["meta_key"].value_counts().head(20)
-        print("\nTop 20 distinct meta_key values in wp_usermeta:")
-        print(top_meta_keys.to_frame(name="count"))
+        print("\nExtracting raw snapshots to the data lake...")
+        lake_paths = extractor.extract_to_lake()
+        for table_name, path in lake_paths.items():
+            print(f"  {table_name} -> {path}")
