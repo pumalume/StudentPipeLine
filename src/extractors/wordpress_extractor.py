@@ -86,3 +86,16 @@ if __name__ == "__main__":
     print("Testing WordPress connection...")
     ok = extractor.test_connection()
     print(f"Connection status: {'OK' if ok else 'FAILED'}")
+
+    if ok:
+        print("\nFetching raw wp_users / wp_usermeta rows...")
+        raw_df = extractor.fetch_raw_users()
+
+        pd.set_option("display.max_rows", 20)
+        pd.set_option("display.max_colwidth", 40)
+
+        print(f"\nTotal rows fetched: {len(raw_df)}")
+
+        top_meta_keys = raw_df["meta_key"].value_counts().head(20)
+        print("\nTop 20 distinct meta_key values in wp_usermeta:")
+        print(top_meta_keys.to_frame(name="count"))
