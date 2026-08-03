@@ -50,7 +50,8 @@ class Settings(BaseSettings):
 
     # --- File / API paths ---
     DATA_INPUT_DIR: Path = Path("data/input")
-    GDRIVE_CREDENTIALS_FILE: Path
+    GOOGLE_CREDENTIALS_FILE: Path
+    GOOGLE_SPREADSHEET_ID: str = ""
 
     @computed_field  # type: ignore[misc]
     @property
