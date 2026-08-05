@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import logging
 import logging.handlers
+import sys
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -17,6 +19,27 @@ from urllib.parse import quote_plus
 
 from pydantic import Field, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+# Branches and datasets the pipeline pulls from. To add a branch, add its name
+# here and the matching GSHEET_<BRANCH>_<DATASET>_ID / _TAB fields to Settings.
+SHEET_BRANCHES: tuple[str, ...] = ("golcuk", "izmit")
+SHEET_DATASETS: tuple[str, ...] = ("masterlist", "enrollment")
+
+
+@dataclass(frozen=True)
+class SheetSource:
+    """One Google Sheet to extract: a single dataset for a single branch."""
+
+    branch: str
+    dataset: Literal["masterlist", "enrollment"]
+    spreadsheet_id: str
+    tab: str = ""  # empty -> use the spreadsheet's first tab
+
+    @property
+    def key(self) -> str:
+        """Stable identifier used for logging and data lake paths."""
+        return f"{self.branch}/{self.dataset}"
 
 
 class Settings(BaseSettings):
@@ -51,7 +74,18 @@ class Settings(BaseSettings):
     # --- File / API paths ---
     DATA_INPUT_DIR: Path = Path("data/input")
     GOOGLE_CREDENTIALS_FILE: Path
-    GOOGLE_SPREADSHEET_ID: str = ""
+
+    # --- Google Sheets sources (one spreadsheet per branch per dataset) ---
+    # Leave a *_TAB blank to read the spreadsheet's first tab.
+    GSHEET_GOLCUK_MASTERLIST_ID: str = ""
+    GSHEET_GOLCUK_MASTERLIST_TAB: str = ""
+    GSHEET_GOLCUK_ENROLLMENT_ID: str = ""
+    GSHEET_GOLCUK_ENROLLMENT_TAB: str = ""
+
+    GSHEET_IZMIT_MASTERLIST_ID: str = ""
+    GSHEET_IZMIT_MASTERLIST_TAB: str = ""
+    GSHEET_IZMIT_ENROLLMENT_ID: str = ""
+    GSHEET_IZMIT_ENROLLMENT_TAB: str = ""
 
     @computed_field  # type: ignore[misc]
     @property
@@ -71,6 +105,44 @@ class Settings(BaseSettings):
             f"@{self.PG_DB_HOST}:{self.PG_DB_PORT}/{self.PG_DB_NAME}"
         )
 
+    @property
+    def sheet_sources(self) -> list[SheetSource]:
+        """Every configured Google Sheet, one entry per branch/dataset pair.
+
+        Pairs whose `*_ID` is blank are left out — see `missing_sheet_sources`.
+        """
+        sources: list[SheetSource] = []
+        for branch, dataset in _sheet_source_slots():
+            spreadsheet_id = self._sheet_field(branch, dataset, "ID")
+            if not spreadsheet_id:
+                continue
+            sources.append(
+                SheetSource(
+                    branch=branch,
+                    dataset=dataset,  # type: ignore[arg-type]
+                    spreadsheet_id=spreadsheet_id,
+                    tab=self._sheet_field(branch, dataset, "TAB"),
+                )
+            )
+        return sources
+
+    @property
+    def missing_sheet_sources(self) -> list[str]:
+        """Branch/dataset pairs with no spreadsheet ID configured."""
+        return [
+            f"{branch}/{dataset}"
+            for branch, dataset in _sheet_source_slots()
+            if not self._sheet_field(branch, dataset, "ID")
+        ]
+
+    def _sheet_field(self, branch: str, dataset: str, suffix: str) -> str:
+        return str(getattr(self, f"GSHEET_{branch.upper()}_{dataset.upper()}_{suffix}", "")).strip()
+
+
+def _sheet_source_slots() -> list[tuple[str, str]]:
+    """All branch/dataset combinations the pipeline knows about."""
+    return [(branch, dataset) for branch in SHEET_BRANCHES for dataset in SHEET_DATASETS]
+
 
 @lru_cache
 def get_settings() -> Settings:
@@ -78,12 +150,28 @@ def get_settings() -> Settings:
     return Settings()
 
 
+def configure_console_encoding() -> None:
+    """Force stdout/stderr to UTF-8 so Turkish characters don't crash the console.
+
+    Windows terminals default to cp1252, which raises UnicodeEncodeError on names
+    like "Gölcük" or a combining dot above. Undecodable output is replaced rather
+    than fatal. Idempotent and a no-op on streams that don't support reconfigure.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
+        except (AttributeError, ValueError):
+            pass
+
+
 def configure_logging(settings: Settings | None = None) -> logging.Logger:
     """Initialize root logging (console + rotating file handler) from Settings.
 
-    Idempotent: safe to call multiple times without duplicating handlers.
+    Also forces UTF-8 console output. Idempotent: safe to call multiple times
+    without duplicating handlers.
     """
     settings = settings or get_settings()
+    configure_console_encoding()
     settings.LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
 
     formatter = logging.Formatter(

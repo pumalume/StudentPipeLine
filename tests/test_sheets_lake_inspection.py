@@ -1,4 +1,6 @@
-"""Inspects the latest raw Google Sheets roster snapshot stored in the local data lake.
+"""Inspects the latest raw Google Sheets snapshots stored in the local data lake.
+
+Walks every branch/dataset Parquet file in the most recent snapshot directory.
 
 Usage:
     python -m tests.test_sheets_lake_inspection
@@ -9,7 +11,10 @@ from pathlib import Path
 
 import pandas as pd
 
+from config.settings import configure_console_encoding
+
 LAKE_SHEETS_DIR = Path("data/raw/google_sheets")
+PREVIEW_ROWS = 10
 
 
 def _latest_snapshot_dir() -> Path:
@@ -26,26 +31,31 @@ def inspect_latest_snapshot() -> None:
     snapshot_dir = _latest_snapshot_dir()
     print(f"Inspecting snapshot: {snapshot_dir}\n")
 
-    roster_file = snapshot_dir / "roster.parquet"
-    if not roster_file.exists():
+    parquet_files = sorted(snapshot_dir.glob("*/*.parquet"))
+    if not parquet_files:
         raise FileNotFoundError(
-            f"Expected {roster_file} not found. "
+            f"No Parquet files found under {snapshot_dir}. "
             "Make sure `extract_to_lake()` ran successfully."
         )
 
-    roster_df = pd.read_parquet(roster_file)
+    for parquet_file in parquet_files:
+        # <snapshot>/<branch>/<dataset>.parquet
+        key = f"{parquet_file.parent.name}/{parquet_file.stem}"
+        df = pd.read_parquet(parquet_file)
 
-    print(f"Total roster rows in lake: {len(roster_df)}")
+        print("=" * 70)
+        print(f"{key}  ({len(df)} rows, {len(df.columns)} columns)")
+        print("-" * 70)
 
-    print("\nColumns available in roster.parquet:")
-    for col in roster_df.columns:
-        print(f" - {col} ({roster_df[col].dtype})")
+        print("Columns:")
+        for col in df.columns:
+            print(f" - {col} ({df[col].dtype})")
 
-    print("\n" + "=" * 60)
-    print("Sample preview: Top 10 roster records")
-    print("-" * 60)
-    print(roster_df.head(10).to_string(index=False))
+        print(f"\nSample preview: top {PREVIEW_ROWS} records")
+        print(df.head(PREVIEW_ROWS).to_string(index=False))
+        print()
 
 
 if __name__ == "__main__":
+    configure_console_encoding()
     inspect_latest_snapshot()
